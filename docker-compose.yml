@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  # MongoDB for document storage
+  mongodb:
+    image: mongo:noble
+    container_name: mongo-hackathon
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: analytics_db
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - analytics-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching and fast data access
+  redis:
+    image: redis:alpine
+    container_name: redis-hackathon
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - analytics-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Analytics application
+  analytics-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: analytics-app
+    ports:
+      - "8050:8050"  # Dash dashboard
+      - "8000:8000"  # FastAPI
+    environment:
+      - MONGODB_URL=mongodb://mongodb:27017
+      - REDIS_URL=redis://redis:6379
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./data:/app/data
+      - ./outputs:/app/outputs
+      - ./config:/app/config
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - analytics-network
+    command: python main.py
+
+volumes:
+  mongodb_data:
+  redis_data:
+
+networks:
+  analytics-network:
+    driver: bridge
